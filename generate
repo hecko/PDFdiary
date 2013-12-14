@@ -1,0 +1,216 @@
+#!/usr/bin/perl
+
+use utf8;
+use Encode qw<decode_utf8>;
+use common::sense;
+use PDF::API2;
+use Data::Dumper;
+use Date::Calc qw<Monday_of_Week Add_Delta_Days Day_of_Week_Abbreviation
+                  Day_of_Year Month_to_Text Days_in_Year Weeks_in_Year>;
+
+my $year = 2014;
+my $namedays = namedays();
+
+my $pdf = PDF::API2->new();
+
+# last week of previous year
+generate_page(Weeks_in_Year( $year - 1 ),( $year - 1));
+my $week = 1;
+while ( $week ne ( Weeks_in_Year($year) + 1 ) ) {
+    generate_page($week,$year);
+    $week++;
+}
+# first week of next year
+generate_page(1, ( $year + 1 ));
+
+$pdf->saveas("diary.pdf");
+
+sub generate_page {
+    my ($week, $year) = @_;
+    say "Generating week $week for year $year";
+
+my ($init_year, $init_month, $init_mow) = Monday_of_Week($week,$year);
+
+my %data;
+$data{info}{week} = $week;
+$data{info}{year} = $year;
+$data{info}{days_in_year} = Days_in_Year($year,12);
+for my $dow ( 0, 1, 2, 3, 4, 5, 6 ) {
+    my ($this_year, $this_month, $this_day) = Add_Delta_Days($init_year, $init_month, $init_mow, $dow);
+    $data{'days'}{$dow}        = $this_day;
+    $data{'months'}{$dow}      = $this_month;
+    $data{'years'}{$dow}       = $this_year;
+    $data{'nameday'}{$dow}     = $namedays->{$this_month}{$this_day};
+    $data{'day_names'}{$dow}   = Day_of_Week_Abbreviation($dow + 1);
+    $data{'month_names'}{$dow} = Month_to_Text($this_month);
+    $data{'diy'}{$dow}         = Days_in_Year($this_year,12);
+    $data{'doy'}{$dow}         = '#' . Day_of_Year($this_year,$this_month,$this_day)
+                                 . ' ('
+                                 . ( $data{'diy'}{$dow} - Day_of_Year($this_year,$this_month,$this_day) )
+                                 . ')';
+}
+
+# according to http://en.wikipedia.org/wiki/ISO_week_date
+$data{'info'}{'month_name_short'} = substr($data{'month_names'}{3},0,3);
+
+my $page = $pdf->page();
+$page->mediabox(842,595);
+
+my $text = $page->text();
+my $gfx  = $page->gfx();
+
+#aaa
+place( $text, 62, -2, { 'font'   => 'Helvetica',
+                        'fsize'  => 38,
+                        'align'  => 'right',
+                        'right'  => 1,
+                      }, $data{'days'} );
+place( $text, 65, 17, { 'font'  => 'Helvetica',
+                        'fsize' => 9,
+                        'right' => 1,
+                      }, $data{'month_names'} );
+place( $text, 65,  0, { 'font'  => 'Helvetica',
+                        'fsize' => 16,
+                        'right' => 1,
+                      }, $data{'day_names'} );
+place( $text, 60, -11, { 'font'   => 'Helvetica',
+                         'fsize'  => 8,
+                         'align'  => 'right',
+                         'right'  => 1,
+                      }, $data{'nameday'} );
+place( $text, 65, -11, { 'font'   => 'Helvetica',
+                         'fsize'  => 8,
+                         'right'  => 1,
+                      }, $data{'doy'} );
+
+place_hlines($gfx, \%data);
+place_middle_line($gfx);
+place_week_info( $text, \%data );
+place_year_info( $text, \%data );
+place_logo( $text, \%data );
+
+}
+
+
+sub place {
+    my ($text, $x_in, $y_in, $o, $data,) = @_;
+    my $font = $pdf->corefont($o->{'font'});
+    my $spacing = 180;
+    my ($x, $y);
+    for my $i ( 0, 1, 2, 3, 4, 5, 6 ) {
+        if ( $i == 0 ) {
+            $x = 20  + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 3 && $o->{right} ) {
+            $x = 710 + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 3 && !$o->{right} && !$o->{mirror} ) {
+            $x = 410 + 20 + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 3 && $o->{mirror} ) {
+            $x = abs(842 - $x);
+            $y = 550 + $y_in + $spacing;
+            $o->{'align'} = 'right';
+        }
+        if ( $i == 3 && !$o->{mirror} && !$o->{right} ) {
+            $x = 410 + 20 + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 6 ) {
+            $y = $y - 90;
+        } else {
+            $y = $y - $spacing;
+        }
+        if ( $i == 5 || $i == 6 ) {
+            $text->fillcolor('gray');
+        } else {
+            $text->fillcolor('black');
+        }
+        $text->translate($x, $y);
+        $text->font($font, $o->{fsize});
+        if ($o->{'align'} =~ /right/) {
+            $text->text_right($data->{$i});
+        } else {
+            $text->text($data->{$i});
+        }
+    }
+}
+
+sub place_week_info {
+    my ($text, $data) = @_;
+    $text->fillcolor('#000000');
+    $text->translate(817,10);
+    $text->text_right("week $data->{info}{week} | $data->{info}{month_name_short}");
+}
+
+sub place_year_info {
+    my ($text, $data) = @_;
+    $text->fillcolor('#000000');
+    $text->translate(25,10);
+    $text->text("$data->{info}{year} ($data->{info}{days_in_year})");
+}
+
+sub place_logo {
+    my ($text, $data) = @_;
+    $text->fillcolor('gray');
+    $text->translate( int (421/2),10);
+    $text->text_center("https://moirelabs.com");
+}
+
+sub place_hlines {
+    my ($gfx, $data) = @_;
+    my $spacing = 180;
+    my $y       = 390;
+    my $single_digit_offset = 0;
+    for my $i ( 0, 1 ) {
+        $gfx->move( 130 , $y );
+        $gfx->linedash(1,5);
+        if ( ( $data->{days}{4} < 10 && $i == 0 )
+          || ( $data->{days}{5} < 10 && $i == 1 ) ) {
+            $single_digit_offset = 20;
+        } else {
+            $single_digit_offset = 0;
+        }
+        $gfx->hline( 842 - 120 + $single_digit_offset );
+        $gfx->linewidth(1);
+        $gfx->fillcolor('blue');
+        $gfx->fillstroke(0);
+        $y = $y - $spacing;
+    }
+}
+
+sub place_middle_line {
+    my ($gfx) = @_;
+    $gfx->linewidth(1);
+    $gfx->linedash(1,5);
+    $gfx->move(421,0);
+    $gfx->vline(1000);
+    $gfx->fillcolor('gray');
+    $gfx->fillstroke(1);
+}
+
+sub namedays {
+    my $file = 'name_day.sk.csv';
+    open my $fh, $file;
+    my %namedays;
+    my $maxlength;
+    while (my $line = <$fh>) {
+        my ($date, $name) = split(/\|/, $line);
+        $name =~ s/[\n\r]//g;
+        $name =~ s/,/, /g;
+        $name = decode_utf8($name);
+        my ($month, $day) = split(/-/, $date);
+        $day   =~ s/^0//;
+        $month =~ s/^0//;
+        $namedays{$month}{$day} = $name;
+        $maxlength = $name
+            if length($name) >= length($maxlength);
+        say "Long name: $name"
+            if length($name) >= 18;
+    }
+    say "Longest name: $maxlength";
+    return \%namedays;
+}
