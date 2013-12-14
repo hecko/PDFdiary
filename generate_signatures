@@ -1,0 +1,275 @@
+#!/usr/bin/perl
+
+use utf8;
+use Encode qw<decode_utf8>;
+use common::sense;
+use PDF::API2;
+use Data::Dumper;
+use Date::Calc qw<Monday_of_Week Add_Delta_Days Day_of_Week_Abbreviation
+                  Day_of_Year Month_to_Text Days_in_Year Weeks_in_Year>;
+
+my $year = 2014;
+my $sps  = 8; # define sheets per book signature
+
+my $pdf  = PDF::API2->new();
+
+my $data = generate_document_structure( 1, $sps ); # number of signatures
+generate_pages_only($pdf, $data);
+
+say Dumper $data;
+
+my $week = 1;
+# while ( $week ne ( Weeks_in_Year($year) + 1 ) ) {
+while ( $week ne 15 ) {
+    generate_week($pdf, $year, $week, $data);
+    $week++;
+}
+
+$pdf->saveas("diary_blank.pdf");
+
+sub place_hlines {
+    my ($gfx, $this_data, $pdfpage) = @_;
+    my $page = $pdf->openpage($pdfpage);
+    my $gfx = $page->gfx();
+    my $spacing = 180;
+    my $y       = 390;
+    my $single_digit_offset = 0;
+    for my $i ( 0, 1 ) {
+        $gfx->move( 130 , $y );
+        $gfx->linedash(1,5);
+        if ( ( $this_data->{days}{4} < 10 && $i == 0 )
+          || ( $this_data->{days}{5} < 10 && $i == 1 ) ) {
+            $single_digit_offset = 20;
+        } else {
+            $single_digit_offset = 0;
+        }
+        $gfx->hline( 842 - 120 + $single_digit_offset );
+        $gfx->linewidth(1);
+        $gfx->fillcolor('blue');
+        $gfx->fillstroke(0);
+        $y = $y - $spacing;
+    }
+}
+
+sub place_week_info {
+    my ($pdf, $this_data, $pdfpage) = @_;
+    my $page = $pdf->openpage($pdfpage);
+    my $font = $pdf->corefont('Helvetica');
+    my $text = $page->text();
+    $text->font($font,10);
+    $text->fillcolor('#000000');
+    $text->translate(817,10);
+    $text->text_right("week $this_data->{info}{week} | $this_data->{info}{month_name_short}");
+}
+
+sub place_year_info {
+    my ($pdf, $this_data, $pdfpage) = @_;
+    my $page = $pdf->openpage($pdfpage);
+    my $font = $pdf->corefont('Helvetica');
+    my $text = $page->text();
+    $text->font($font,10);
+    $text->fillcolor('#000000');
+    $text->translate(25,10);
+    $text->text("$this_data->{info}{year} ($this_data->{info}{days_in_year})");
+}
+
+sub place_logo {
+    my ($pdf, $this_data, $pdfpage) = @_;
+    my $page = $pdf->openpage($pdfpage);
+    my $font = $pdf->corefont('Helvetica');
+    my $text = $page->text();
+    $text->font($font,10);
+    $text->fillcolor('gray');
+    $text->translate( int (421/2),10);
+    $text->text_center("https://moirelabs.com");
+}
+
+sub generate_week {
+    my ($pdf, $year, $week, $data) = @_;
+    my $page = ($week * 2) - 1; # page for monday for this week
+    my $pdfpage = $data->{page}{$page}{pdfpage};
+    say "Generating week $week of $year using PDFpage number $pdfpage for Monday.";
+
+    my ($init_year, $init_month, $init_mow) = Monday_of_Week($week,$year);
+
+    my %this_data;
+    $this_data{info}{week} = $week;
+    $this_data{info}{year} = $year;
+    $this_data{info}{days_in_year} = Days_in_Year($year,12);
+    for my $dow ( 0, 1, 2, 3, 4, 5, 6 ) {
+        my ($this_year, $this_month, $this_day) = Add_Delta_Days($init_year, $init_month, $init_mow, $dow);
+        $this_data{'days'}{$dow}        = $this_day;
+        $this_data{'months'}{$dow}      = $this_month;
+        $this_data{'years'}{$dow}       = $this_year;
+#        $this_data{'nameday'}{$dow}     = $namedays->{$this_month}{$this_day};
+        $this_data{'day_names'}{$dow}   = Day_of_Week_Abbreviation($dow + 1);
+        $this_data{'month_names'}{$dow} = Month_to_Text($this_month);
+        $this_data{'diy'}{$dow}         = Days_in_Year($this_year,12);
+        $this_data{'doy'}{$dow}         = '#' . Day_of_Year($this_year,$this_month,$this_day)
+                                        . ' ('
+                                        . ( $this_data{'diy'}{$dow} - Day_of_Year($this_year,$this_month,$this_day) )
+                                        . ')';
+    }
+
+    # according to http://en.wikipedia.org/wiki/ISO_week_date
+    $this_data{'info'}{'month_name_short'} = substr($this_data{'month_names'}{3},0,3);
+
+    place( $pdf, 62,  -2, { 'font'   => 'Helvetica',
+                            'fsize'  => 38,
+                            'align'  => 'right',
+                            'right'  => 1,
+                          },
+                          $this_data{'days'},
+                          $pdfpage,
+                          $data );
+    place( $pdf, 65,  17, { 'font'  => 'Helvetica',
+                            'fsize' => 9,
+                            'right' => 1,
+                          },
+                          $this_data{'month_names'},
+                          $pdfpage,
+                          $data );
+    place( $pdf, 65,   0, { 'font'  => 'Helvetica',
+                            'fsize' => 16,
+                            'right' => 1,
+                          },
+                          $this_data{'day_names'},
+                          $pdfpage,
+                          $data );
+    place( $pdf, 65, -11, { 'font'   => 'Helvetica',
+                            'fsize'  => 8,
+                            'right'  => 1,
+                          },
+                          $this_data{'doy'},
+                          $pdfpage,
+                          $data );
+
+    place_week_info( $pdf, \%this_data, $pdfpage );
+    place_year_info( $pdf, \%this_data, $pdfpage );
+    place_logo( $pdf, \%this_data, $pdfpage );
+    place_hlines( $pdf, \%this_data, $pdfpage );
+}
+
+sub place {
+    my ($pdf, $x_in, $y_in, $o, $this_data, $pdfpage, $data) = @_;
+    my $page = $pdf->openpage($pdfpage);
+    my $this_page = $data->{pdfpage}{$pdfpage}{page}{l};
+    say "PDFpage $pdfpage left side is page $this_page";
+    my $spacing = 180;
+    my ($x, $y);
+    for my $i ( 0, 1, 2, 3, 4, 5, 6 ) {
+        if ( $i == 3 ) {
+            $this_page = $data->{pdfpage}{$pdfpage}{page}{l};
+            $pdfpage   = $data->{page}{($this_page + 1)}{pdfpage};
+            say "Switching to the proper right side of pdfpage for page $this_page (day (0-6): $i), which is PDF page number $pdfpage";
+            $page = $pdf->openpage($pdfpage);
+        }
+        my $text = $page->text();
+        my $font = $pdf->corefont($o->{'font'});
+        if ( $i == 0 ) {
+            $x = 20  + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 3 && $o->{right} ) {
+            $x = 710 + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 3 && !$o->{right} && !$o->{mirror} ) {
+            $x = 410 + 20 + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 3 && $o->{mirror} ) {
+            $x = abs(842 - $x);
+            $y = 550 + $y_in + $spacing;
+            $o->{'align'} = 'right';
+        }
+        if ( $i == 3 && !$o->{mirror} && !$o->{right} ) {
+            $x = 410 + 20 + $x_in;
+            $y = 550 + $y_in + $spacing;
+        }
+        if ( $i == 6 ) {
+            $y = $y - 90;
+        } else {
+            $y = $y - $spacing;
+        }
+        if ( $i == 5 || $i == 6 ) {
+            $text->fillcolor('gray');
+        } else {
+            $text->fillcolor('black');
+        }
+        $text->translate($x, $y);
+        $text->font($font, $o->{fsize});
+        if ($o->{'align'} =~ /right/) {
+            $text->text_right($this_data->{$i});
+        } else {
+            $text->text($this_data->{$i});
+        }
+    }
+}
+
+sub generate_document_structure {
+    my ($signatures, $sheets_per_signature) = @_;
+    my %data;
+    for (my $sig = 1; $sig <= $signatures; $sig++) {
+        my $start = ( $sig - 1 ) * $sheets_per_signature * 4;
+        for (my $sheet = 1; $sheet <= $sheets_per_signature; $sheet++) {
+            my $fl = ( $sheet * 2 ) - 1 + $start;
+            my $fr = ( ( $sheets_per_signature * 4 ) - ( $sheet * 2 ) )  + $start;
+            my $bl = ( ( $sheets_per_signature * 4 ) + 1 - ( $sheet * 2 ) ) + $start;
+            my $br = ( $sheet * 2 ) - 2 + $start;
+            $data{'sig'}{$sig}{'sheets'}{$sheet}{'FRONT'}{'l'} = $fl;
+            $data{'sig'}{$sig}{'sheets'}{$sheet}{'FRONT'}{'r'} = $fr;
+            $data{'sig'}{$sig}{'sheets'}{$sheet}{'BACK'}{'l'} = $bl;
+            $data{'sig'}{$sig}{'sheets'}{$sheet}{'BACK'}{'r'} = $br;
+
+            $data{'page'}{$fl}{'sig'}   = $sig;
+            $data{'page'}{$fl}{'sheet'} = $sheet;
+            $data{'page'}{$fl}{'front'} = 1;
+            $data{'page'}{$fl}{'side'}  = 'LEFT';
+
+            $data{'page'}{$fr}{'sig'}   = $sig;
+            $data{'page'}{$fr}{'sheet'} = $sheet;
+            $data{'page'}{$fr}{'front'} = 1;
+            $data{'page'}{$fr}{'side'}  = 'RIGHT';
+
+            $data{'page'}{$bl}{'sig'}   = $sig;
+            $data{'page'}{$bl}{'sheet'} = $sheet;
+            $data{'page'}{$bl}{'front'} = 0;
+            $data{'page'}{$bl}{'side'}  = 'LEFT';
+
+            $data{'page'}{$br}{'sig'}   = $sig;
+            $data{'page'}{$br}{'sheet'} = $sheet;
+            $data{'page'}{$br}{'front'} = 0;
+            $data{'page'}{$br}{'side'}  = 'RIGHT';
+        }
+    }
+    return \%data;
+}
+
+sub generate_pages_only {
+    my ($pdf, $data) = @_;
+    my $pdfpage = 0;
+    my $font = $pdf->corefont('Helvetica');
+    for my $side ( 'FRONT', 'BACK' ) {
+        for my $sig (keys(%{$data->{sig}})) {
+            for my $sheet (keys(%{$data->{sig}{$sig}{sheets}})) {
+                say "Generating PDF page for signature $sig, sheet $sheet - $side";
+                $pdfpage ++;
+                $data->{'page'}{$data->{sig}{$sig}{sheets}{$sheet}{$side}{l}}{'pdfpage'} = $pdfpage;
+                $data->{'page'}{$data->{sig}{$sig}{sheets}{$sheet}{$side}{r}}{'pdfpage'} = $pdfpage;
+                $data->{'pdfpage'}{$pdfpage}{page}{r} = $data->{sig}{$sig}{sheets}{$sheet}{$side}{r};
+                $data->{'pdfpage'}{$pdfpage}{page}{l} = $data->{sig}{$sig}{sheets}{$sheet}{$side}{l};
+                my $page = $pdf->page(); # front of the sheet
+                $page->mediabox(842,595);
+                my $text = $page->text();
+                $text->transform( -translate => [ 842/2 , 400], -rotate => 90 );
+                $text->font($font, 8);
+                $text->text('sig: ' . $sig . ' / sheet: ' . $sheet . ' / ' . $side);
+                $text->transform( -translate => [ 842/2 , 50], -rotate => 90 );
+                $text->text( 'l: ' . $data->{sig}{$sig}{sheets}{$sheet}{$side}{l} . ' / r:' . $data->{sig}{$sig}{sheets}{$sheet}{$side}{r});
+                $text->transform( -translate => [842/2,  250], -rotate => 90 );
+                $text->text("pdfpage: $pdfpage");
+            }
+        }
+    }
+}
