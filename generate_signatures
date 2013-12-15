@@ -10,17 +10,20 @@ use Date::Calc qw<Monday_of_Week Add_Delta_Days Day_of_Week_Abbreviation
 
 my $year = 2014;
 my $sps  = 8; # define sheets per book signature
+my $lang = 'sk';
+
+my $namedays = namedays();
 
 my $pdf  = PDF::API2->new();
 
-my $data = generate_document_structure( 1, $sps ); # number of signatures
+my $data = generate_document_structure( 4, $sps ); # number of signatures
 generate_pages_only($pdf, $data);
 
 say Dumper $data;
 
 my $week = 1;
-# while ( $week ne ( Weeks_in_Year($year) + 1 ) ) {
-while ( $week ne 15 ) {
+while ( $week ne ( Weeks_in_Year($year) + 1 ) ) {
+# while ( $week ne 15 ) {
     generate_week($pdf, $year, $week, $data);
     $week++;
 }
@@ -43,6 +46,8 @@ sub place_hlines {
         } else {
             $single_digit_offset = 0;
         }
+        die
+            if ( !$this_data->{days}{4} || !$this_data->{days}{5} );
         $gfx->hline( 842 - 120 + $single_digit_offset );
         $gfx->linewidth(1);
         $gfx->fillcolor('blue');
@@ -74,7 +79,7 @@ sub place_year_info {
 }
 
 sub place_logo {
-    my ($pdf, $this_data, $pdfpage) = @_;
+    my ($pdf, $pdfpage) = @_;
     my $page = $pdf->openpage($pdfpage);
     my $font = $pdf->corefont('Helvetica');
     my $text = $page->text();
@@ -96,23 +101,31 @@ sub generate_week {
     $this_data{info}{week} = $week;
     $this_data{info}{year} = $year;
     $this_data{info}{days_in_year} = Days_in_Year($year,12);
+    my @day_names_sk   = ( 'Pon', 'Uto', 'Str', 'Štv', 'Pia', 'Sob', 'Ned' );
+    my @month_names_sk = ( 'Január', 'Február', 'Marec',
+                           'Apríl',  'Máj',     'Jún',
+                           'Júl',    'August',  'September',
+                           'Október','November','December' );
     for my $dow ( 0, 1, 2, 3, 4, 5, 6 ) {
         my ($this_year, $this_month, $this_day) = Add_Delta_Days($init_year, $init_month, $init_mow, $dow);
-        $this_data{'days'}{$dow}        = $this_day;
-        $this_data{'months'}{$dow}      = $this_month;
-        $this_data{'years'}{$dow}       = $this_year;
-#        $this_data{'nameday'}{$dow}     = $namedays->{$this_month}{$this_day};
-        $this_data{'day_names'}{$dow}   = Day_of_Week_Abbreviation($dow + 1);
-        $this_data{'month_names'}{$dow} = Month_to_Text($this_month);
-        $this_data{'diy'}{$dow}         = Days_in_Year($this_year,12);
-        $this_data{'doy'}{$dow}         = '#' . Day_of_Year($this_year,$this_month,$this_day)
-                                        . ' ('
-                                        . ( $this_data{'diy'}{$dow} - Day_of_Year($this_year,$this_month,$this_day) )
-                                        . ')';
+        $this_data{'days'}{$dow}         = $this_day;
+        $this_data{'months'}{$dow}       = $this_month;
+        $this_data{'years'}{$dow}        = $this_year;
+        $this_data{'nameday'}{$dow}      = $namedays->{$this_month}{$this_day};
+        $this_data{'day_names'}{$dow}    = Day_of_Week_Abbreviation($dow + 1);
+        $this_data{'day_names_sk'}{$dow} = $day_names_sk[$dow];
+        $this_data{'month_names'}{$dow}  = Month_to_Text($this_month);
+        $this_data{'month_names_sk'}{$dow} = $month_names_sk[$this_month - 1];
+        $this_data{'diy'}{$dow}          = Days_in_Year($this_year,12);
+        $this_data{'doy'}{$dow}          = '#' . Day_of_Year($this_year,$this_month,$this_day)
+                                         . ' ('
+                                         . ( $this_data{'diy'}{$dow} - Day_of_Year($this_year,$this_month,$this_day) )
+                                         . ')';
     }
 
     # according to http://en.wikipedia.org/wiki/ISO_week_date
-    $this_data{'info'}{'month_name_short'} = substr($this_data{'month_names'}{3},0,3);
+    $this_data{'info'}{'month_name_short'}    = substr($this_data{'month_names'}{3},0,3);
+    $this_data{'info'}{'month_name_short_sk'} = substr($this_data{'month_names_sk'}{3},0,3);
 
     place( $pdf, 62,  -2, { 'font'   => 'Helvetica',
                             'fsize'  => 38,
@@ -126,14 +139,14 @@ sub generate_week {
                             'fsize' => 9,
                             'right' => 1,
                           },
-                          $this_data{'month_names'},
+                          $this_data{"month_names_$lang"},
                           $pdfpage,
                           $data );
     place( $pdf, 65,   0, { 'font'  => 'Helvetica',
                             'fsize' => 16,
                             'right' => 1,
                           },
-                          $this_data{'day_names'},
+                          $this_data{"day_names_$lang"},
                           $pdfpage,
                           $data );
     place( $pdf, 65, -11, { 'font'   => 'Helvetica',
@@ -143,11 +156,18 @@ sub generate_week {
                           $this_data{'doy'},
                           $pdfpage,
                           $data );
+    place( $pdf, 60, -11, { 'font'   => 'Helvetica',
+                             'fsize'  => 8,
+                             'align'  => 'right',
+                             'right'  => 1,
+                           }, $this_data{'nameday'},
+                          $pdfpage,
+                          $data );
 
-    place_week_info( $pdf, \%this_data, $pdfpage );
-    place_year_info( $pdf, \%this_data, $pdfpage );
-    place_logo( $pdf, \%this_data, $pdfpage );
-    place_hlines( $pdf, \%this_data, $pdfpage );
+# this is fucked - needs to be properly fixed!!    place_week_info( $pdf, \%this_data, $pdfpage );
+# this may be fucked - needs to be properly checked    place_year_info( $pdf, \%this_data, $pdfpage );
+    place_logo( $pdf, $pdfpage );
+#    place_hlines( $pdf, \%this_data, $pdfpage );
 }
 
 sub place {
@@ -161,6 +181,8 @@ sub place {
         if ( $i == 3 ) {
             $this_page = $data->{pdfpage}{$pdfpage}{page}{l};
             $pdfpage   = $data->{page}{($this_page + 1)}{pdfpage};
+            die "Do not have enough pages in the document! Maybe add another signature"
+                if !$pdfpage;
             say "Switching to the proper right side of pdfpage for page $this_page (day (0-6): $i), which is PDF page number $pdfpage";
             $page = $pdf->openpage($pdfpage);
         }
@@ -259,17 +281,51 @@ sub generate_pages_only {
                 $data->{'page'}{$data->{sig}{$sig}{sheets}{$sheet}{$side}{r}}{'pdfpage'} = $pdfpage;
                 $data->{'pdfpage'}{$pdfpage}{page}{r} = $data->{sig}{$sig}{sheets}{$sheet}{$side}{r};
                 $data->{'pdfpage'}{$pdfpage}{page}{l} = $data->{sig}{$sig}{sheets}{$sheet}{$side}{l};
-                my $page = $pdf->page(); # front of the sheet
-                $page->mediabox(842,595);
+
+                my $page = $pdf->page();  # create new page
+                $page->mediabox(842,595); # rotate the page landscape
+
                 my $text = $page->text();
-                $text->transform( -translate => [ 842/2 , 400], -rotate => 90 );
+                $text->transform( -translate => [ 842/2 , 390], -rotate => 90 );
                 $text->font($font, 8);
                 $text->text('sig: ' . $sig . ' / sheet: ' . $sheet . ' / ' . $side);
-                $text->transform( -translate => [ 842/2 , 50], -rotate => 90 );
+                $text->transform( -translate => [ 842/2 , 120], -rotate => 90 );
                 $text->text( 'l: ' . $data->{sig}{$sig}{sheets}{$sheet}{$side}{l} . ' / r:' . $data->{sig}{$sig}{sheets}{$sheet}{$side}{r});
                 $text->transform( -translate => [842/2,  250], -rotate => 90 );
                 $text->text("pdfpage: $pdfpage");
+                if ( $side =~ /FRONT/ ) {
+                    for my $y_offset ( 30, 100, 220 ) {
+                    # make markers for sewing holes
+                    $text->transform( -translate => [ 842/2 , 595 - $y_offset ], -rotate => 90 );
+                    $text->text_center("\x2b");
+                    $text->transform( -translate => [ 842/2 , $y_offset ], -rotate => 90 );
+                    $text->text_center("\x2b");
+                    }
+                }
             }
         }
     }
+}
+
+sub namedays {
+    my $file = 'name_day.sk.csv';
+    open my $fh, $file;
+    my %namedays;
+    my $maxlength;
+    while (my $line = <$fh>) {
+        my ($date, $name) = split(/\|/, $line);
+        $name =~ s/[\n\r]//g;
+        $name =~ s/,/, /g;
+        $name = decode_utf8($name);
+        my ($month, $day) = split(/-/, $date);
+        $day   =~ s/^0//;
+        $month =~ s/^0//;
+        $namedays{$month}{$day} = $name;
+        $maxlength = $name
+            if length($name) >= length($maxlength);
+        say "Long name: $name"
+            if length($name) >= 18;
+    }
+    say "Longest name: $maxlength";
+    return \%namedays;
 }
