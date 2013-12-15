@@ -112,9 +112,9 @@ sub generate_week {
         $this_data{'months'}{$dow}       = $this_month;
         $this_data{'years'}{$dow}        = $this_year;
         $this_data{'nameday'}{$dow}      = $namedays->{$this_month}{$this_day};
-        $this_data{'day_names'}{$dow}    = Day_of_Week_Abbreviation($dow + 1);
+        $this_data{'day_names_en'}{$dow} = Day_of_Week_Abbreviation($dow + 1);
         $this_data{'day_names_sk'}{$dow} = $day_names_sk[$dow];
-        $this_data{'month_names'}{$dow}  = Month_to_Text($this_month);
+        $this_data{'month_names_en'}{$dow} = Month_to_Text($this_month);
         $this_data{'month_names_sk'}{$dow} = $month_names_sk[$this_month - 1];
         $this_data{'diy'}{$dow}          = Days_in_Year($this_year,12);
         $this_data{'doy'}{$dow}          = '#' . Day_of_Year($this_year,$this_month,$this_day)
@@ -124,8 +124,7 @@ sub generate_week {
     }
 
     # according to http://en.wikipedia.org/wiki/ISO_week_date
-    $this_data{'info'}{'month_name_short'}    = substr($this_data{'month_names'}{3},0,3);
-    $this_data{'info'}{'month_name_short_sk'} = substr($this_data{'month_names_sk'}{3},0,3);
+    $this_data{'info'}{'month_name_short'}    = substr($this_data{"month_names_$lang"}{3},0,3);
 
     place( $pdf, 62,  -2, { 'font'   => 'Helvetica',
                             'fsize'  => 38,
@@ -174,7 +173,7 @@ sub place {
     my ($pdf, $x_in, $y_in, $o, $this_data, $pdfpage, $data) = @_;
     my $page = $pdf->openpage($pdfpage);
     my $this_page = $data->{pdfpage}{$pdfpage}{page}{l};
-    say "PDFpage $pdfpage left side is page $this_page";
+    # say "PDFpage $pdfpage left side is page $this_page";
     my $spacing = 180;
     my ($x, $y);
     for my $i ( 0, 1, 2, 3, 4, 5, 6 ) {
@@ -183,7 +182,7 @@ sub place {
             $pdfpage   = $data->{page}{($this_page + 1)}{pdfpage};
             die "Do not have enough pages in the document! Maybe add another signature"
                 if !$pdfpage;
-            say "Switching to the proper right side of pdfpage for page $this_page (day (0-6): $i), which is PDF page number $pdfpage";
+            # say "Switching to the proper right side of pdfpage for page $this_page (day (0-6): $i), which is PDF page number $pdfpage";
             $page = $pdf->openpage($pdfpage);
         }
         my $text = $page->text();
@@ -275,7 +274,7 @@ sub generate_pages_only {
     for my $side ( 'FRONT', 'BACK' ) {
         for my $sig (keys(%{$data->{sig}})) {
             for my $sheet (keys(%{$data->{sig}{$sig}{sheets}})) {
-                say "Generating PDF page for signature $sig, sheet $sheet - $side";
+                # say "Generating PDF page for signature $sig, sheet $sheet - $side";
                 $pdfpage ++;
                 $data->{'page'}{$data->{sig}{$sig}{sheets}{$sheet}{$side}{l}}{'pdfpage'} = $pdfpage;
                 $data->{'page'}{$data->{sig}{$sig}{sheets}{$sheet}{$side}{r}}{'pdfpage'} = $pdfpage;
